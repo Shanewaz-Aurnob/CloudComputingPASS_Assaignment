@@ -18,10 +18,10 @@ JWT_ALGORITHM = 'HS256'
 
 # Database configuration
 DB_CONFIG = {
-    'host': 'localhost',
-    'database': 'user_auth_db',
-    'user': 'your_username',  # Replace with your MySQL username
-    'password': 'your_password'  # Replace with your MySQL password
+    'host': 'sql12.freesqldatabase.com',
+    'database': 'sql12781272',
+    'user': 'sql12781272',  # Replace with your MySQL username
+    'password': '7qPLvwZDC4'  # Replace with your MySQL password
 }
 
 # Database connection function with connection pooling
