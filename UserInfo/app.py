@@ -16,12 +16,12 @@ app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-pr
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-key-change-this')
 JWT_ALGORITHM = 'HS256'
 
-# Database configuration
+# Database configuration - UPDATE THESE WITH YOUR ACTUAL DATABASE CREDENTIALS
 DB_CONFIG = {
     'host': 'sql12.freesqldatabase.com',
     'database': 'sql12781272',
-    'user': 'sql12781272',  # Replace with your MySQL username
-    'password': '7qPLvwZDC4'  # Replace with your MySQL password
+    'user': 'sql12781272',
+    'password': '7qPLvwZDC4'
 }
 
 # Database connection function with connection pooling
@@ -31,7 +31,8 @@ def get_db_connection():
             **DB_CONFIG,
             autocommit=True,
             pool_name='auth_pool',
-            pool_size=5
+            pool_size=5,
+            pool_reset_session=True
         )
         return connection
     except Error as e:
@@ -631,9 +632,9 @@ DASHBOARD_TEMPLATE = '''<!DOCTYPE html>
                 <tbody>
                     {% for session in sessions %}
                     <tr>
-                        <td>{{ session.device_info or 'Unknown Device' }}</td>
-                        <td>{{ session.ip_address }}</td>
-                        <td>{{ session.location or 'Unknown' }}</td>
+                        <td>{{ (request.headers.get('User-Agent', 'Unknown Device'))[:50] + '...' if request.headers.get('User-Agent', '') | length > 50 else request.headers.get('User-Agent', 'Unknown Device') }}</td>
+                        <td>{{ session.get('ip_address', 'Unknown') }}</td>
+                        <td>{{ session.get('location', 'Unknown') }}</td>
                         <td>{{ session.created_at.strftime('%Y-%m-%d %H:%M') if session.created_at else 'N/A' }}</td>
                         <td><span class="status-active">Active</span></td>
                     </tr>
@@ -649,117 +650,21 @@ DASHBOARD_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
-# Initialize database tables
-def init_database():
-    connection = get_db_connection()
-    if not connection:
-        print("❌ Failed to connect to database")
-        return False
-    
-    try:
-        cursor = connection.cursor()
-        
-        # Check if users table exists and has correct structure
-        cursor.execute("SHOW TABLES LIKE 'users'")
-        table_exists = cursor.fetchone()
-        
-        if table_exists:
-            # Check if password_hash column exists
-            cursor.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
-            column_exists = cursor.fetchone()
-            
-            if not column_exists:
-                print("🔧 Adding missing password_hash column to users table...")
-                try:
-                    # Try to add the column (might fail if 'password' column exists)
-                    cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)")
-                    
-                    # If there's an old 'password' column, migrate data
-                    cursor.execute("SHOW COLUMNS FROM users LIKE 'password'")
-                    old_password_exists = cursor.fetchone()
-                    
-                    if old_password_exists:
-                        print("🔄 Migrating password data...")
-                        # Get all users with old password format
-                        cursor.execute("SELECT id, password FROM users WHERE password IS NOT NULL")
-                        users_to_migrate = cursor.fetchall()
-                        
-                        for user_id, old_password in users_to_migrate:
-                            # Hash the old password and update
-                            new_hash = hash_password(old_password)
-                            cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user_id))
-                        
-                        # Drop the old password column
-                        cursor.execute("ALTER TABLE users DROP COLUMN password")
-                        print("✅ Password migration completed")
-                        
-                except Error as alter_error:
-                    print(f"⚠️  Column modification error: {alter_error}")
-        
-        # Create users table with correct structure
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                email VARCHAR(100) UNIQUE NOT NULL,
-                full_name VARCHAR(100) NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP NULL
-            )
-        """)
-        
-        # User sessions table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_sessions (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                session_token VARCHAR(512) NOT NULL,
-                ip_address VARCHAR(45),
-                device_info TEXT,
-                location VARCHAR(100),
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                INDEX idx_token (session_token),
-                INDEX idx_user_active (user_id, is_active)
-            )
-        """)
-        
-        # Login attempts table for security
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS login_attempts (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                ip_address VARCHAR(45) NOT NULL,
-                username VARCHAR(50),
-                success BOOLEAN DEFAULT FALSE,
-                attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_ip_time (ip_address, attempted_at)
-            )
-        """)
-        
-        connection.commit()
-        cursor.close()
-        
-        print("✅ Database schema verified and updated")
-        return True
-        
-    except Error as e:
-        print(f"❌ Database initialization error: {e}")
-        return False
-    finally:
-        connection.close()
-
 # Helper functions
 def hash_password(password):
+    """Hash a password using bcrypt"""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(password, hashed):
-    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    """Verify a password against its hash"""
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    except Exception as e:
+        print(f"Password verification error: {e}")
+        return False
 
 def generate_jwt_token(user_id, remember_me=False):
+    """Generate a JWT token for the user"""
     expiry = datetime.utcnow() + timedelta(days=30 if remember_me else 1)
     payload = {
         'user_id': user_id,
@@ -769,13 +674,15 @@ def generate_jwt_token(user_id, remember_me=False):
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def get_client_ip():
+    """Get the client's IP address"""
     if request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0]
     elif request.headers.get('X-Real-IP'):
         return request.headers.get('X-Real-IP')
-    return request.remote_addr
+    return request.remote_addr or '127.0.0.1'
 
 def create_user_session(user_id, token, remember_me=False):
+    """Create a new user session in the database"""
     connection = get_db_connection()
     if not connection:
         return False
@@ -790,9 +697,9 @@ def create_user_session(user_id, token, remember_me=False):
         expires_at = datetime.now() + timedelta(days=30 if remember_me else 1)
         
         cursor.execute("""
-            INSERT INTO user_sessions (user_id, session_token, ip_address, device_info, expires_at)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (user_id, token, get_client_ip(), request.headers.get('User-Agent', ''), expires_at))
+            INSERT INTO user_sessions (user_id, session_token, expires_at)
+            VALUES (%s, %s, %s)
+        """, (user_id, token, expires_at))
         
         connection.commit()
         cursor.close()
@@ -805,20 +712,28 @@ def create_user_session(user_id, token, remember_me=False):
         connection.close()
 
 def log_login_attempt(username, success):
+    """Log login attempts (basic implementation)"""
+    print(f"Login attempt - Username: {username}, Success: {success}, IP: {get_client_ip()}")
+
+# Initialize database (check if tables exist)
+def check_database():
+    """Check if database connection works"""
     connection = get_db_connection()
     if not connection:
-        return
+        print("❌ Failed to connect to database")
+        return False
     
     try:
         cursor = connection.cursor()
-        cursor.execute("""
-            INSERT INTO login_attempts (ip_address, username, success)
-            VALUES (%s, %s, %s)
-        """, (get_client_ip(), username, success))
-        connection.commit()
+        # Test if users table exists
+        cursor.execute("SELECT COUNT(*) FROM users LIMIT 1")
+        cursor.fetchone()
         cursor.close()
+        print("✅ Database connection successful")
+        return True
     except Error as e:
-        print(f"Login attempt logging error: {e}")
+        print(f"❌ Database error: {e}")
+        return False
     finally:
         connection.close()
 
@@ -846,61 +761,35 @@ def login():
         try:
             cursor = connection.cursor(dictionary=True)
             
-            # First check what columns exist in the users table
-            cursor.execute("SHOW COLUMNS FROM users")
-            columns = [row['Field'] for row in cursor.fetchall()]
-            
-            # Use appropriate password column
-            password_column = 'password_hash' if 'password_hash' in columns else 'password'
-            
-            cursor.execute(f"""
+            # Find user by username or email
+            cursor.execute("""
                 SELECT * FROM users 
                 WHERE (username = %s OR email = %s) AND is_active = TRUE
             """, (username, username))
             
             user = cursor.fetchone()
             
-            if user:
-                # Check password based on available column
-                password_valid = False
-                if password_column == 'password_hash' and password_column in user:
-                    password_valid = verify_password(password, user[password_column])
-                elif 'password' in user:
-                    # Handle plain text password (less secure, for backward compatibility)
-                    password_valid = (password == user['password'])
-                    
-                    # If login successful with plain text, upgrade to hashed password
-                    if password_valid and 'password_hash' in columns:
-                        new_hash = hash_password(password)
-                        cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", 
-                                     (new_hash, user['id']))
-                        connection.commit()
+            if user and verify_password(password, user['password']):
+                # Update last login
+                cursor.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
+                connection.commit()
                 
-                if password_valid:
-                    # Update last login
-                    cursor.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
-                    connection.commit()
+                # Generate JWT token
+                token = generate_jwt_token(user['id'], remember_me)
+                
+                # Create session record
+                if create_user_session(user['id'], token, remember_me):
+                    log_login_attempt(username, True)
                     
-                    # Generate JWT token
-                    token = generate_jwt_token(user['id'], remember_me)
-                    
-                    # Create session record
-                    if create_user_session(user['id'], token, remember_me):
-                        log_login_attempt(username, True)
-                        
-                        # Set cookie and redirect
-                        response = make_response(redirect(url_for('dashboard')))
-                        response.set_cookie('auth_token', token, 
-                                          max_age=30*24*60*60 if remember_me else 24*60*60,
-                                          httponly=True, secure=False, samesite='Lax')
-                        return response
-                    else:
-                        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                                    message="Session creation failed", success=False)
+                    # Set cookie and redirect
+                    response = make_response(redirect(url_for('dashboard')))
+                    response.set_cookie('auth_token', token, 
+                                      max_age=30*24*60*60 if remember_me else 24*60*60,
+                                      httponly=True, secure=False, samesite='Lax')
+                    return response
                 else:
-                    log_login_attempt(username, False)
                     return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                                message="Invalid username or password", success=False)
+                                                message="Session creation failed", success=False)
             else:
                 log_login_attempt(username, False)
                 return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
@@ -955,24 +844,13 @@ def register():
             return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
                                         message="Username or email already exists", success=False)
         
-        # Check what columns exist in the users table
-        cursor.execute("SHOW COLUMNS FROM users")
-        columns = [row[0] for row in cursor.fetchall()]
-        
-        # Create new user with proper column structure
+        # Create new user with hashed password
         password_hash = hash_password(password)
         
-        if 'password_hash' in columns:
-            cursor.execute("""
-                INSERT INTO users (username, email, full_name, password_hash)
-                VALUES (%s, %s, %s, %s)
-            """, (username, email, full_name, password_hash))
-        else:
-            # Fallback for older schema (less secure)
-            cursor.execute("""
-                INSERT INTO users (username, email, full_name, password)
-                VALUES (%s, %s, %s, %s)
-            """, (username, email, full_name, password_hash))
+        cursor.execute("""
+            INSERT INTO users (username, email, full_name, password)
+            VALUES (%s, %s, %s, %s)
+        """, (username, email, full_name, password_hash))
         
         connection.commit()
         cursor.close()
@@ -1004,341 +882,178 @@ def dashboard():
                 WHERE user_id = %s AND is_active = TRUE AND expires_at > NOW()
                 ORDER BY created_at DESC
             """, (user['user_id'],))
-            
             sessions = cursor.fetchall()
             cursor.close()
-            
         except Error as e:
-            print(f"Dashboard error: {e}")
+            print(f"Error fetching sessions: {e}")
         finally:
             connection.close()
-    
+
     return render_template_string(DASHBOARD_TEMPLATE, user=user, sessions=sessions)
 
 @app.route('/logout')
+@token_required
 def logout():
     token = request.cookies.get('auth_token')
     
-    if token:
-        # Deactivate session in database
-        connection = get_db_connection()
-        if connection:
-            try:
-                cursor = connection.cursor()
-                cursor.execute("""
-                    UPDATE user_sessions 
-                    SET is_active = FALSE 
-                    WHERE session_token = %s
-                """, (token,))
-                connection.commit()
-                cursor.close()
-            except Error as e:
-                print(f"Logout error: {e}")
-            finally:
-                connection.close()
-    
-    # Clear cookie and redirect
-    response = make_response(redirect(url_for('login')))
-    response.set_cookie('auth_token', '', expires=0)
-    return response
-
-@app.route('/api/user-info')
-@token_required
-def api_user_info():
-    """API endpoint to get current user information"""
-    return jsonify({
-        'user_id': request.current_user['user_id'],
-        'username': request.current_user['username'],
-        'full_name': request.current_user['full_name'],
-        'last_login': request.current_user.get('last_login')
-    })
-
-@app.route('/api/sessions')
-@token_required
-def api_sessions():
-    """API endpoint to get user's active sessions"""
+    # Invalidate session
     connection = get_db_connection()
-    if not connection:
-        return jsonify({'error': 'Database connection failed'}), 500
-    
-    try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT id, ip_address, device_info, location, created_at, expires_at
-            FROM user_sessions 
-            WHERE user_id = %s AND is_active = TRUE AND expires_at > NOW()
-            ORDER BY created_at DESC
-        """, (request.current_user['user_id'],))
-        
-        sessions = cursor.fetchall()
-        cursor.close()
-        
-        # Convert datetime objects to strings for JSON serialization
-        for session in sessions:
-            if session['created_at']:
-                session['created_at'] = session['created_at'].isoformat()
-            if session['expires_at']:
-                session['expires_at'] = session['expires_at'].isoformat()
-        
-        return jsonify({'sessions': sessions})
-        
-    except Error as e:
-        print(f"API sessions error: {e}")
-        return jsonify({'error': 'Failed to fetch sessions'}), 500
-    finally:
-        connection.close()
-
-@app.route('/api/revoke-session/<int:session_id>', methods=['POST'])
-@token_required
-def api_revoke_session(session_id):
-    """API endpoint to revoke a specific session"""
-    connection = get_db_connection()
-    if not connection:
-        return jsonify({'error': 'Database connection failed'}), 500
-    
-    try:
-        cursor = connection.cursor()
-        cursor.execute("""
-            UPDATE user_sessions 
-            SET is_active = FALSE 
-            WHERE id = %s AND user_id = %s
-        """, (session_id, request.current_user['user_id']))
-        
-        if cursor.rowcount > 0:
+    if connection:
+        try:
+            cursor = connection.cursor()
+            cursor.execute("UPDATE user_sessions SET is_active = FALSE WHERE session_token = %s", (token,))
             connection.commit()
             cursor.close()
-            return jsonify({'success': True, 'message': 'Session revoked successfully'})
-        else:
-            cursor.close()
-            return jsonify({'error': 'Session not found or access denied'}), 404
-            
-    except Error as e:
-        print(f"API revoke session error: {e}")
-        return jsonify({'error': 'Failed to revoke session'}), 500
-    finally:
-        connection.close()
+        except Error as e:
+            print(f"Error logging out: {e}")
+        finally:
+            connection.close()
+    
+    # Remove token from cookies and redirect to login
+    response = make_response(redirect(url_for('login')))
+    response.delete_cookie('auth_token')
+    return response
 
 @app.route('/forgot-password')
 def forgot_password():
-    # Simple forgot password page (placeholder)
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Forgot Password - SecureAuth</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                max-width: 400px; 
-                margin: 100px auto; 
-                padding: 20px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-            }
-            .container {
-                background: white;
-                padding: 40px;
-                border-radius: 10px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            }
-            .form-group { margin-bottom: 20px; }
-            label { display: block; margin-bottom: 5px; font-weight: 600; }
-            input { 
-                width: 100%; 
-                padding: 12px; 
-                border: 2px solid #e5e7eb; 
-                border-radius: 8px; 
-                font-size: 16px;
-            }
-            button { 
-                width: 100%; 
-                padding: 12px; 
-                background: #667eea; 
-                color: white; 
-                border: none; 
-                border-radius: 8px; 
-                font-size: 16px; 
-                cursor: pointer;
-            }
-            button:hover { background: #5a67d8; }
-            .back-link { text-align: center; margin-top: 20px; }
-            .back-link a { color: #667eea; text-decoration: none; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h2>Reset Password</h2>
-            <p>Enter your email address and we'll send you a reset link.</p>
-            <form>
-                <div class="form-group">
-                    <label>Email Address</label>
-                    <input type="email" required>
-                </div>
-                <button type="submit">Send Reset Link</button>
-            </form>
-            <div class="back-link">
-                <a href="/login">← Back to Sign In</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    '''
+    return render_template_string('''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forgot Password</title>
+</head>
+<body>
+    <h1>Forgot Password</h1>
+    <p>Please enter your email to reset your password.</p>
+    <form method="POST" action="/reset-password">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required>
+        <button type="submit">Reset Password</button>
+    </form>
+</body>
+</html>''')
 
-@app.errorhandler(404)
-def not_found(error):
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>404 - Page Not Found</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                text-align: center; 
-                margin-top: 100px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                color: white;
-            }
-            .container {
-                background: rgba(255,255,255,0.1);
-                backdrop-filter: blur(10px);
-                padding: 40px;
-                border-radius: 20px;
-                max-width: 500px;
-                margin: 0 auto;
-            }
-            h1 { font-size: 4rem; margin-bottom: 20px; }
-            p { font-size: 1.2rem; margin-bottom: 30px; }
-            a { 
-                color: white; 
-                text-decoration: none; 
-                background: rgba(255,255,255,0.2);
-                padding: 12px 24px;
-                border-radius: 8px;
-                border: 1px solid rgba(255,255,255,0.3);
-            }
-            a:hover { background: rgba(255,255,255,0.3); }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>404</h1>
-            <p>The page you're looking for doesn't exist.</p>
-            <a href="/login">Go to Login</a>
-        </div>
-    </body>
-    </html>
-    ''', 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>500 - Internal Server Error</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                text-align: center; 
-                margin-top: 100px;
-                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-                min-height: 100vh;
-                color: white;
-            }
-            .container {
-                background: rgba(255,255,255,0.1);
-                backdrop-filter: blur(10px);
-                padding: 40px;
-                border-radius: 20px;
-                max-width: 500px;
-                margin: 0 auto;
-            }
-            h1 { font-size: 4rem; margin-bottom: 20px; }
-            p { font-size: 1.2rem; margin-bottom: 30px; }
-            a { 
-                color: white; 
-                text-decoration: none; 
-                background: rgba(255,255,255,0.2);
-                padding: 12px 24px;
-                border-radius: 8px;
-                border: 1px solid rgba(255,255,255,0.3);
-            }
-            a:hover { background: rgba(255,255,255,0.3); }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>500</h1>
-            <p>Something went wrong on our end. Please try again later.</p>
-            <a href="/login">Go to Login</a>
-        </div>
-    </body>
-    </html>
-    ''', 500
-
-# Application initialization
-if __name__ == '__main__':
-    print("🔐 Initializing SecureAuth System...")
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    email = request.form.get('email', '').strip()
     
-    # Force database initialization
-    print("🔧 Checking database schema...")
-    if init_database():
-        print("✅ Database initialized successfully")
-        print("🚀 Starting Flask application...")
-        print("📍 Access the application at: http://localhost:5000")
-        print("🛡️  Features enabled:")
-        print("   • JWT Token Authentication")
-        print("   • Password Hashing with bcrypt")
-        print("   • Session Management")
-        print("   • Login Attempt Logging")
-        print("   • Responsive UI Design")
-        print("   • RESTful API Endpoints")
-        print("   • Database Schema Auto-Migration")
+    if not email:
+        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                      message="Please provide your email", success=False)
+    
+    connection = get_db_connection()
+    if not connection:
+        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                      message="Database connection error", success=False)
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
         
-        # Create a test user if none exist
+        # Check if email exists
+        cursor.execute("SELECT id, full_name FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        
+        if user:
+            # Generate a password reset token (this could be implemented using a real token system)
+            reset_token = secrets.token_hex(16)
+            reset_expiry = datetime.utcnow() + timedelta(hours=1)
+            
+            cursor.execute("""
+                INSERT INTO password_resets (user_id, reset_token, reset_expiry)
+                VALUES (%s, %s, %s)
+            """, (user['id'], reset_token, reset_expiry))
+            connection.commit()
+
+            # Send an email (this is a placeholder and should be replaced with actual email sending logic)
+            print(f"Password reset link for {user['full_name']} is: /reset-password/{reset_token}")
+            
+            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                          message="Password reset link has been sent to your email", success=True)
+        else:
+            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                          message="No account found with that email", success=False)
+        
+    except Error as e:
+        print(f"Error resetting password: {e}")
+        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                      message="An error occurred while resetting your password", success=False)
+    finally:
+        connection.close()
+
+@app.route('/reset-password/<reset_token>', methods=['GET', 'POST'])
+def reset_password_with_token(reset_token):
+    connection = get_db_connection()
+    if not connection:
+        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                      message="Database connection error", success=False)
+    
+    if request.method == 'POST':
+        new_password = request.form.get('password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+        
+        if new_password != confirm_password:
+            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                          message="Passwords do not match", success=False)
+        
+        if len(new_password) < 8:
+            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                          message="Password must be at least 8 characters", success=False)
+        
         try:
-            connection = get_db_connection()
-            if connection:
-                cursor = connection.cursor()
-                cursor.execute("SELECT COUNT(*) as count FROM users")
-                user_count = cursor.fetchone()[0]
+            cursor = connection.cursor(dictionary=True)
+            
+            # Check if reset token is valid
+            cursor.execute("""
+                SELECT pr.user_id, u.email 
+                FROM password_resets pr 
+                JOIN users u ON pr.user_id = u.id
+                WHERE pr.reset_token = %s AND pr.reset_expiry > NOW()
+            """, (reset_token,))
+            
+            reset_data = cursor.fetchone()
+            
+            if reset_data:
+                hashed_password = hash_password(new_password)
                 
-                if user_count == 0:
-                    print("👤 Creating default admin user...")
-                    admin_password = "admin123"
-                    admin_hash = hash_password(admin_password)
-                    
-                    # Check column structure
-                    cursor.execute("SHOW COLUMNS FROM users")
-                    columns = [row[0] for row in cursor.fetchall()]
-                    
-                    if 'password_hash' in columns:
-                        cursor.execute("""
-                            INSERT INTO users (username, email, full_name, password_hash)
-                            VALUES (%s, %s, %s, %s)
-                        """, ('admin', 'admin@example.com', 'Administrator', admin_hash))
-                    else:
-                        cursor.execute("""
-                            INSERT INTO users (username, email, full_name, password)
-                            VALUES (%s, %s, %s, %s)
-                        """, ('admin', 'admin@example.com', 'Administrator', admin_hash))
-                    
-                    connection.commit()
-                    print("✅ Default user created - Username: admin, Password: admin123")
-                
-                cursor.close()
-                connection.close()
-        except Exception as e:
-            print(f"⚠️  Could not create default user: {e}")
-        
-        # Run the application
-        app.run(debug=True, host='0.0.0.0', port=5000)
-    else:
-        print("❌ Failed to initialize database. Please check your MySQL connection.")
-        print("🔍 Troubleshooting steps:")
-        print("   1. Verify your database credentials in DB_CONFIG")
-        print("   2. Ensure MySQL server is running")
-        print("   3. Check if the database exists")
-        print("   4. Verify network connectivity to the database server")
+                cursor.execute("UPDATE users SET password = %s WHERE id = %s", (hashed_password, reset_data['user_id']))
+                connection.commit()
+
+                # Invalidate the reset token
+                cursor.execute("DELETE FROM password_resets WHERE reset_token = %s", (reset_token,))
+                connection.commit()
+
+                return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                              message="Your password has been reset successfully. Please log in.", success=True)
+            else:
+                return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                              message="Invalid or expired reset token", success=False)
+        except Error as e:
+            print(f"Error resetting password with token: {e}")
+            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                          message="An error occurred while resetting your password", success=False)
+        finally:
+            connection.close()
+
+    return render_template_string('''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password</title>
+</head>
+<body>
+    <h1>Reset Password</h1>
+    <form method="POST" action="/reset-password/{{ reset_token }}">
+        <label for="password">New Password</label>
+        <input type="password" id="password" name="password" required>
+        <label for="confirm_password">Confirm Password</label>
+        <input type="password" id="confirm_password" name="confirm_password" required>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>''', reset_token=reset_token)
+
+if __name__ == '__main__':
+    check_database()  # Ensure the database connection is successful
+    app.run(debug=True)
