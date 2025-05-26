@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-import numpy as np
 
 app = Flask(__name__)
 
@@ -8,7 +7,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matrix Multiplier</title>
+    <title>Even Numbers Generator</title>
     <style>
         * {
             margin: 0;
@@ -24,7 +23,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
             background: rgba(255, 255, 255, 0.95);
             border-radius: 20px;
@@ -33,7 +32,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         .header {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             color: white;
             padding: 30px;
             text-align: center;
@@ -54,135 +53,80 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             padding: 40px;
         }
 
-        .controls {
+        .input-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 15px;
+            background: #f8f9fa;
+            padding: 20px 30px;
+            border-radius: 15px;
+            border: 2px solid #e9ecef;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .input-group label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 1.1rem;
+        }
+
+        .input-group input {
+            width: 120px;
+            padding: 12px 15px;
+            border: 2px solid #ced4da;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            transition: border-color 0.3s ease;
+        }
+
+        .input-group input:focus {
+            border-color: #11998e;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(17, 153, 142, 0.2);
+        }
+
+        .options-section {
             display: flex;
+            justify-content: center;
             gap: 20px;
             margin-bottom: 30px;
             flex-wrap: wrap;
         }
 
-        .size-control {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .option-group {
             background: #f8f9fa;
             padding: 15px 20px;
             border-radius: 10px;
             border: 2px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        .size-control label {
+        .option-group label {
             font-weight: 600;
             color: #495057;
         }
 
-        .size-control input {
-            width: 60px;
-            padding: 8px;
+        .option-group select {
+            padding: 8px 12px;
             border: 1px solid #ced4da;
             border-radius: 5px;
-            text-align: center;
-            font-size: 16px;
-        }
-
-        .matrices-container {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 30px;
-            align-items: center;
-            margin-bottom: 30px;
-        }
-
-        .matrix-section {
-            text-align: center;
-        }
-
-        .matrix-section h2 {
-            color: #495057;
-            margin-bottom: 15px;
-            font-size: 1.3rem;
-        }
-
-        .matrix-input {
-            display: inline-block;
-            background: #fff;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            border: 2px solid #e9ecef;
-        }
-
-        .matrix-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .matrix-row:last-child {
-            margin-bottom: 0;
-        }
-
-        .matrix-cell {
-            width: 60px;
-            height: 40px;
-            border: 2px solid #dee2e6;
-            border-radius: 5px;
-            text-align: center;
             font-size: 14px;
-            transition: border-color 0.3s ease;
-        }
-
-        .matrix-cell:focus {
-            border-color: #4facfe;
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.2);
-        }
-
-        .multiply-symbol {
-            font-size: 2rem;
-            color: #495057;
-            font-weight: bold;
-        }
-
-        .result-section {
-            text-align: center;
-            margin-top: 30px;
-        }
-
-        .result-section h2 {
-            color: #495057;
-            margin-bottom: 15px;
-            font-size: 1.3rem;
-        }
-
-        .result-matrix {
-            display: inline-block;
-            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            border: 2px solid #28a745;
-        }
-
-        .result-cell {
-            width: 60px;
-            height: 40px;
-            background: white;
-            border: 2px solid #28a745;
-            border-radius: 5px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin: 2px;
-            font-weight: 600;
-            color: #155724;
         }
 
         .action-buttons {
             display: flex;
             gap: 15px;
             justify-content: center;
-            margin-top: 30px;
+            margin-bottom: 30px;
             flex-wrap: wrap;
         }
 
@@ -199,14 +143,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             color: white;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 4px 15px rgba(17, 153, 142, 0.4);
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+            box-shadow: 0 6px 20px rgba(17, 153, 142, 0.6);
         }
 
         .btn-secondary {
@@ -218,6 +162,70 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .btn-secondary:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(240, 147, 251, 0.6);
+        }
+
+        .result-section {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .result-section h2 {
+            color: #495057;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .result-info {
+            background: #e2e3e5;
+            color: #383d41;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+
+        .numbers-container {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border: 2px solid #28a745;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .numbers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 10px;
+        }
+
+        .number-cell {
+            background: white;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            padding: 10px;
+            font-weight: 600;
+            color: #155724;
+            text-align: center;
+            transition: transform 0.2s ease;
+        }
+
+        .number-cell:hover {
+            transform: scale(1.05);
+        }
+
+        .numbers-list {
+            background: white;
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
         }
 
         .error-message {
@@ -240,30 +248,34 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             text-align: center;
         }
 
-        .dimensions-info {
-            background: #e2e3e5;
-            color: #383d41;
-            padding: 10px 15px;
-            border-radius: 8px;
-            margin: 10px 0;
-            font-family: 'Courier New', monospace;
-            font-weight: 600;
+        .stats-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #e9ecef;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #11998e;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-top: 5px;
         }
 
         @media (max-width: 768px) {
-            .matrices-container {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-            
-            .multiply-symbol {
-                transform: rotate(90deg);
-            }
-            
-            .controls {
-                flex-direction: column;
-            }
-            
             .header h1 {
                 font-size: 2rem;
             }
@@ -271,128 +283,120 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             .main-content {
                 padding: 20px;
             }
+            
+            .input-group {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .options-section {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .numbers-grid {
+                grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔢 Matrix Multiplier</h1>
-            <p>Multiply two matrices with an elegant, interactive interface</p>
+            <h1>🔢 Even Numbers Generator</h1>
+            <p>Generate sequences of even numbers with customizable options</p>
         </div>
         
         <div class="main-content">
-            <div class="controls">
-                <div class="size-control">
-                    <label>Matrix A:</label>
-                    <input type="number" id="rowsA" value="2" min="1" max="10"> × 
-                    <input type="number" id="colsA" value="3" min="1" max="10">
-                </div>
-                <div class="size-control">
-                    <label>Matrix B:</label>
-                    <input type="number" id="rowsB" value="3" min="1" max="10"> × 
-                    <input type="number" id="colsB" value="2" min="1" max="10">
+            <div class="input-section">
+                <div class="input-group">
+                    <label for="numberCount">Generate</label>
+                    <input type="number" id="numberCount" value="10" min="1" max="1000">
+                    <label>even numbers</label>
                 </div>
             </div>
 
-            <div class="matrices-container">
-                <div class="matrix-section">
-                    <h2>Matrix A</h2>
-                    <div class="matrix-input" id="matrixA"></div>
+            <div class="options-section">
+                <div class="option-group">
+                    <label for="startFrom">Start from:</label>
+                    <input type="number" id="startFrom" value="0" step="2">
                 </div>
-                
-                <div class="multiply-symbol">×</div>
-                
-                <div class="matrix-section">
-                    <h2>Matrix B</h2>
-                    <div class="matrix-input" id="matrixB"></div>
+                <div class="option-group">
+                    <label for="displayMode">Display as:</label>
+                    <select id="displayMode">
+                        <option value="grid">Grid</option>
+                        <option value="list">List</option>
+                    </select>
+                </div>
+                <div class="option-group">
+                    <label for="includeStats">Show stats:</label>
+                    <input type="checkbox" id="includeStats" checked>
                 </div>
             </div>
 
             <div class="action-buttons">
-                <button class="btn btn-primary" onclick="multiplyMatrices()">Calculate Result</button>
-                <button class="btn btn-secondary" onclick="clearAll()">Clear All</button>
+                <button class="btn btn-primary" onclick="generateNumbers()">Generate Numbers</button>
+                <button class="btn btn-secondary" onclick="clearResults()">Clear Results</button>
             </div>
 
             <div id="message"></div>
             
             <div class="result-section" id="resultSection" style="display: none;">
-                <h2>Result Matrix</h2>
-                <div id="dimensionsInfo" class="dimensions-info"></div>
-                <div class="result-matrix" id="resultMatrix"></div>
+                <h2>Generated Even Numbers</h2>
+                <div id="resultInfo" class="result-info"></div>
+                <div id="statsSection" class="stats-section"></div>
+                <div class="numbers-container" id="numbersContainer"></div>
             </div>
         </div>
     </div>
 
     <script>
-        function createMatrix(containerId, rows, cols, prefix) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
+        function displayNumbers(numbers, mode, info, stats) {
+            const container = document.getElementById('numbersContainer');
+            const resultInfo = document.getElementById('resultInfo');
+            const statsSection = document.getElementById('statsSection');
             
-            for (let i = 0; i < rows; i++) {
-                const row = document.createElement('div');
-                row.className = 'matrix-row';
-                
-                for (let j = 0; j < cols; j++) {
-                    const input = document.createElement('input');
-                    input.type = 'number';
-                    input.className = 'matrix-cell';
-                    input.id = `${prefix}_${i}_${j}`;
-                    input.placeholder = '0';
-                    input.value = Math.floor(Math.random() * 10);
-                    row.appendChild(input);
-                }
-                
-                container.appendChild(row);
+            resultInfo.textContent = info;
+            
+            // Display stats if enabled
+            if (document.getElementById('includeStats').checked && stats) {
+                statsSection.innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.count}</div>
+                        <div class="stat-label">Total Numbers</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.sum}</div>
+                        <div class="stat-label">Sum</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.average}</div>
+                        <div class="stat-label">Average</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.range}</div>
+                        <div class="stat-label">Range</div>
+                    </div>
+                `;
+                statsSection.style.display = 'grid';
+            } else {
+                statsSection.style.display = 'none';
             }
-        }
-
-        function updateMatrices() {
-            const rowsA = parseInt(document.getElementById('rowsA').value);
-            const colsA = parseInt(document.getElementById('colsA').value);
-            const rowsB = parseInt(document.getElementById('rowsB').value);
-            const colsB = parseInt(document.getElementById('colsB').value);
             
-            if (rowsB !== colsA) {
-                document.getElementById('rowsB').value = colsA;
-            }
-            
-            createMatrix('matrixA', rowsA, colsA, 'a');
-            createMatrix('matrixB', colsA, colsB, 'b');
-        }
-
-        function getMatrixValues(prefix, rows, cols) {
-            const matrix = [];
-            for (let i = 0; i < rows; i++) {
-                const row = [];
-                for (let j = 0; j < cols; j++) {
-                    const value = document.getElementById(`${prefix}_${i}_${j}`).value;
-                    row.push(parseFloat(value) || 0);
-                }
-                matrix.push(row);
-            }
-            return matrix;
-        }
-
-        function displayResult(result, dimensions) {
-            const resultContainer = document.getElementById('resultMatrix');
-            const dimensionsInfo = document.getElementById('dimensionsInfo');
-            
-            dimensionsInfo.textContent = dimensions;
-            resultContainer.innerHTML = '';
-            
-            for (let i = 0; i < result.length; i++) {
-                const row = document.createElement('div');
-                row.className = 'matrix-row';
+            if (mode === 'grid') {
+                container.innerHTML = '<div class="numbers-grid"></div>';
+                const grid = container.querySelector('.numbers-grid');
                 
-                for (let j = 0; j < result[i].length; j++) {
+                numbers.forEach(num => {
                     const cell = document.createElement('div');
-                    cell.className = 'result-cell';
-                    cell.textContent = result[i][j].toFixed(2);
-                    row.appendChild(cell);
-                }
-                
-                resultContainer.appendChild(row);
+                    cell.className = 'number-cell';
+                    cell.textContent = num;
+                    grid.appendChild(cell);
+                });
+            } else {
+                container.innerHTML = '<div class="numbers-list"></div>';
+                const list = container.querySelector('.numbers-list');
+                list.textContent = numbers.join(', ');
             }
             
             document.getElementById('resultSection').style.display = 'block';
@@ -406,32 +410,30 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             }, 5000);
         }
 
-        async function multiplyMatrices() {
-            const rowsA = parseInt(document.getElementById('rowsA').value);
-            const colsA = parseInt(document.getElementById('colsA').value);
-            const rowsB = parseInt(document.getElementById('rowsB').value);
-            const colsB = parseInt(document.getElementById('colsB').value);
-            
-            const matrixA = getMatrixValues('a', rowsA, colsA);
-            const matrixB = getMatrixValues('b', rowsB, colsB);
+        async function generateNumbers() {
+            const count = parseInt(document.getElementById('numberCount').value);
+            const startFrom = parseInt(document.getElementById('startFrom').value);
+            const displayMode = document.getElementById('displayMode').value;
+            const includeStats = document.getElementById('includeStats').checked;
             
             try {
-                const response = await fetch('/multiply', {
+                const response = await fetch('/generate', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        matrixA: matrixA,
-                        matrixB: matrixB
+                        count: count,
+                        start_from: startFrom,
+                        include_stats: includeStats
                     })
                 });
                 
                 const data = await response.json();
                 
                 if (response.ok) {
-                    displayResult(data.result, data.dimensions);
-                    showMessage('Matrices multiplied successfully!');
+                    displayNumbers(data.numbers, displayMode, data.info, data.stats);
+                    showMessage(`Successfully generated ${count} even numbers!`);
                 } else {
                     showMessage(data.error, true);
                     document.getElementById('resultSection').style.display = 'none';
@@ -442,20 +444,16 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             }
         }
 
-        function clearAll() {
-            const inputs = document.querySelectorAll('.matrix-cell');
-            inputs.forEach(input => input.value = '');
+        function clearResults() {
             document.getElementById('resultSection').style.display = 'none';
             document.getElementById('message').innerHTML = '';
-            showMessage('All matrices cleared!');
+            showMessage('Results cleared!');
         }
 
-        document.getElementById('rowsA').addEventListener('change', updateMatrices);
-        document.getElementById('colsA').addEventListener('change', updateMatrices);
-        document.getElementById('rowsB').addEventListener('change', updateMatrices);
-        document.getElementById('colsB').addEventListener('change', updateMatrices);
-
-        updateMatrices();
+        // Initialize with default values
+        document.addEventListener('DOMContentLoaded', function() {
+            generateNumbers();
+        });
     </script>
 </body>
 </html>'''
@@ -464,29 +462,50 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 def index():
     return HTML_TEMPLATE
 
-@app.route('/multiply', methods=['POST'])
-def multiply_matrices():
+@app.route('/generate', methods=['POST'])
+def generate_even_numbers():
     try:
         data = request.get_json()
-        matrix_a = np.array(data['matrixA'])
-        matrix_b = np.array(data['matrixB'])
+        count = data.get('count', 10)
+        start_from = data.get('start_from', 0)
+        include_stats = data.get('include_stats', False)
         
-        # Check if matrices can be multiplied
-        if matrix_a.shape[1] != matrix_b.shape[0]:
+        # Validate inputs
+        if count <= 0 or count > 1000:
             return jsonify({
-                'error': f'Cannot multiply matrices: Matrix A has {matrix_a.shape[1]} columns but Matrix B has {matrix_b.shape[0]} rows'
+                'error': 'Count must be between 1 and 1000'
             }), 400
         
-        # Perform matrix multiplication
-        result = np.dot(matrix_a, matrix_b)
+        # Ensure start_from is even
+        if start_from % 2 != 0:
+            start_from += 1
+        
+        # Generate even numbers
+        numbers = []
+        current = start_from
+        for i in range(count):
+            numbers.append(current)
+            current += 2
+        
+        # Calculate statistics if requested
+        stats = None
+        if include_stats:
+            total_sum = sum(numbers)
+            stats = {
+                'count': len(numbers),
+                'sum': total_sum,
+                'average': round(total_sum / len(numbers), 2),
+                'range': f"{numbers[0]} - {numbers[-1]}"
+            }
         
         return jsonify({
-            'result': result.tolist(),
-            'dimensions': f'{matrix_a.shape[0]}x{matrix_a.shape[1]} × {matrix_b.shape[0]}x{matrix_b.shape[1]} = {result.shape[0]}x{result.shape[1]}'
+            'numbers': numbers,
+            'info': f'Generated {count} even numbers starting from {start_from}',
+            'stats': stats
         })
         
     except ValueError as e:
-        return jsonify({'error': 'Invalid matrix format. Please enter numbers only.'}), 400
+        return jsonify({'error': 'Invalid input. Please enter valid numbers.'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
