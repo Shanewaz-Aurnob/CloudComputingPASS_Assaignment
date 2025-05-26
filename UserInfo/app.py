@@ -8,6 +8,9 @@ from datetime import datetime, timedelta
 from functools import wraps
 import hashlib
 import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
@@ -16,24 +19,581 @@ app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-pr
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-key-change-this')
 JWT_ALGORITHM = 'HS256'
 
+# Email Configuration (for password reset)
+EMAIL_CONFIG = {
+    'smtp_server': os.environ.get('SMTP_SERVER', 'smtp.gmail.com'),
+    'smtp_port': int(os.environ.get('SMTP_PORT', '587')),
+    'email': os.environ.get('EMAIL_USER', 'your-email@gmail.com'),
+    'password': os.environ.get('EMAIL_PASSWORD', 'your-app-password')
+}
+
 # Database configuration - UPDATE THESE WITH YOUR ACTUAL DATABASE CREDENTIALS
 DB_CONFIG = {
     'host': 'sql12.freesqldatabase.com',
     'database': 'sql12781272',
     'user': 'sql12781272',
-    'password': '7qPLvwZDC4'
+    'password': '7qPLvwZDC4',
+    'charset': 'utf8mb4',
+    'collation': 'utf8mb4_unicode_ci',
+    'use_unicode': True,
+    'autocommit': False  # Changed to False for better transaction control
 }
 
-# Database connection function with connection pooling
+# HTML Templates
+ADVANCED_LOGIN_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Login System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .form-toggle {
+            display: flex;
+            margin-bottom: 2rem;
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+        }
+        
+        .toggle-btn {
+            flex: 1;
+            padding: 0.75rem;
+            background: #f8f9fa;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .toggle-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        input[type="text"], input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 0.5rem;
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .submit-btn:hover {
+            background: #5a6fd8;
+        }
+        
+        .message {
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .forgot-password {
+            text-align: center;
+            margin-top: 1rem;
+        }
+        
+        .forgot-password a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .forgot-password a:hover {
+            text-decoration: underline;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="form-toggle">
+            <button class="toggle-btn active" onclick="showLogin()">Sign In</button>
+            <button class="toggle-btn" onclick="showRegister()">Sign Up</button>
+        </div>
+        
+        {% if message %}
+            <div class="message {{ 'success' if success else 'error' }}">
+                {{ message }}
+            </div>
+        {% endif %}
+        
+        <!-- Login Form -->
+        <form id="loginForm" method="POST" action="/login">
+            <div class="form-group">
+                <label for="username">Username or Email</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <div class="checkbox-group">
+                <input type="checkbox" id="remember_me" name="remember_me">
+                <label for="remember_me">Remember me</label>
+            </div>
+            
+            <button type="submit" class="submit-btn">Sign In</button>
+            
+            <div class="forgot-password">
+                <a href="/forgot-password">Forgot your password?</a>
+            </div>
+        </form>
+        
+        <!-- Registration Form -->
+        <form id="registerForm" method="POST" action="/register" class="hidden">
+            <div class="form-group">
+                <label for="reg_full_name">Full Name</label>
+                <input type="text" id="reg_full_name" name="full_name" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="reg_username">Username</label>
+                <input type="text" id="reg_username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="reg_email">Email</label>
+                <input type="email" id="reg_email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="reg_password">Password</label>
+                <input type="password" id="reg_password" name="password" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="reg_confirm_password">Confirm Password</label>
+                <input type="password" id="reg_confirm_password" name="confirm_password" required>
+            </div>
+            
+            <button type="submit" class="submit-btn">Create Account</button>
+        </form>
+    </div>
+    
+    <script>
+        function showLogin() {
+            document.getElementById('loginForm').classList.remove('hidden');
+            document.getElementById('registerForm').classList.add('hidden');
+            document.querySelectorAll('.toggle-btn')[0].classList.add('active');
+            document.querySelectorAll('.toggle-btn')[1].classList.remove('active');
+        }
+        
+        function showRegister() {
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('registerForm').classList.remove('hidden');
+            document.querySelectorAll('.toggle-btn')[0].classList.remove('active');
+            document.querySelectorAll('.toggle-btn')[1].classList.add('active');
+        }
+    </script>
+</body>
+</html>
+'''
+
+DASHBOARD_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Secure Auth System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.3s;
+        }
+        
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .welcome-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .sessions-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .sessions-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .sessions-table th,
+        .sessions-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .sessions-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .status-active {
+            color: #28a745;
+            font-weight: 500;
+        }
+        
+        .status-inactive {
+            color: #dc3545;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Secure Dashboard</h1>
+        <div class="user-info">
+            <span>Welcome, {{ user.full_name }}!</span>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="welcome-card">
+            <h2>Welcome to your secure dashboard!</h2>
+            <p>You are successfully logged in as <strong>{{ user.username }}</strong></p>
+            <p>Email: {{ user.email or 'Not provided' }}</p>
+            <p>Last login: {{ user.last_login.strftime('%Y-%m-%d %H:%M:%S') if user.last_login else 'First time login' }}</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">{{ sessions|length }}</div>
+                <div>Active Sessions</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-number">{{ user.failed_attempts or 0 }}</div>
+                <div>Failed Login Attempts</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-number">
+                    {{ user.created_at.strftime('%b %d, %Y') if user.created_at else 'Unknown' }}
+                </div>
+                <div>Member Since</div>
+            </div>
+        </div>
+        
+        <div class="sessions-card">
+            <h3>Active Sessions</h3>
+            {% if sessions %}
+                <table class="sessions-table">
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Created</th>
+                            <th>Expires</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for session in sessions %}
+                        <tr>
+                            <td>{{ session.id }}</td>
+                            <td>{{ session.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>{{ session.expires_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>
+                                {% if session.is_active %}
+                                    <span class="status-active">Active</span>
+                                {% else %}
+                                    <span class="status-inactive">Inactive</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No active sessions found.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
+'''
+
+RESET_PASSWORD_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: 500;
+        }
+        input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-bottom: 1rem;
+        }
+        .submit-btn:hover {
+            background: #5a6fd8;
+        }
+        .back-link {
+            text-align: center;
+        }
+        .back-link a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .message {
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ 'Set New Password' if token else 'Reset Password' }}</h1>
+        
+        {% if message %}
+            <div class="message {{ 'success' if success else 'error' }}">
+                {{ message }}
+            </div>
+        {% endif %}
+        
+        {% if token %}
+            <form method="POST" action="/reset-password/{{ token }}">
+                <div class="form-group">
+                    <label for="password">New Password</label>
+                    <input type="password" id="password" name="password" required minlength="8">
+                </div>
+                <div class="form-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" required>
+                </div>
+                <button type="submit" class="submit-btn">Update Password</button>
+            </form>
+        {% else %}
+            <p>Please enter your email to receive a password reset link.</p>
+            <form method="POST" action="/reset-password">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <button type="submit" class="submit-btn">Send Reset Link</button>
+            </form>
+        {% endif %}
+        
+        <div class="back-link">
+            <a href="/login">Back to Login</a>
+        </div>
+    </div>
+</body>
+</html>
+'''
+
+# Database connection function - Simplified without connection pooling
 def get_db_connection():
     try:
-        connection = mysql.connector.connect(
-            **DB_CONFIG,
-            autocommit=True,
-            pool_name='auth_pool',
-            pool_size=5,
-            pool_reset_session=True
-        )
+        connection = mysql.connector.connect(**DB_CONFIG)
         return connection
     except Error as e:
         print(f"Database connection error: {e}")
@@ -62,7 +622,7 @@ def token_required(f):
             if connection:
                 cursor = connection.cursor(dictionary=True)
                 cursor.execute("""
-                    SELECT us.*, u.username, u.full_name 
+                    SELECT us.*, u.username, u.full_name, u.email, u.created_at, u.last_login, u.failed_attempts
                     FROM user_sessions us
                     JOIN users u ON us.user_id = u.id
                     WHERE us.session_token = %s AND us.is_active = TRUE AND us.expires_at > NOW()
@@ -76,6 +636,8 @@ def token_required(f):
                     return redirect(url_for('login'))
                 
                 request.current_user = session_data
+            else:
+                return redirect(url_for('login'))
             
         except jwt.ExpiredSignatureError:
             return redirect(url_for('login'))
@@ -85,575 +647,11 @@ def token_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Advanced login template with enhanced features
-ADVANCED_LOGIN_TEMPLATE = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced User Authentication System</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .auth-container {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 24px;
-            box-shadow: 0 32px 64px rgba(0, 0, 0, 0.15);
-            overflow: hidden;
-            width: 100%;
-            max-width: 440px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .auth-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px 30px;
-            text-align: center;
-            position: relative;
-        }
-
-        .auth-header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="white" fill-opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
-            opacity: 0.3;
-        }
-
-        .auth-header h1 {
-            font-size: 2.2rem;
-            margin-bottom: 8px;
-            font-weight: 700;
-            position: relative;
-            z-index: 1;
-        }
-
-        .auth-header p {
-            font-size: 1rem;
-            opacity: 0.9;
-            position: relative;
-            z-index: 1;
-        }
-
-        .auth-content {
-            padding: 40px 30px;
-        }
-
-        .tab-buttons {
-            display: flex;
-            margin-bottom: 32px;
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 4px;
-            position: relative;
-        }
-
-        .tab-button {
-            flex: 1;
-            padding: 14px;
-            border: none;
-            background: transparent;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 15px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            z-index: 2;
-        }
-
-        .tab-button.active {
-            background: white;
-            color: #667eea;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .form-group {
-            margin-bottom: 24px;
-            position: relative;
-        }
-
-        .form-label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #374151;
-            font-size: 14px;
-        }
-
-        .form-input {
-            width: 100%;
-            padding: 16px 20px;
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            font-size: 16px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            background: #fafafa;
-        }
-
-        .form-input:focus {
-            outline: none;
-            border-color: #667eea;
-            background: white;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .form-button {
-            width: 100%;
-            padding: 18px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .form-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 24px rgba(102, 126, 234, 0.3);
-        }
-
-        .form-button:active {
-            transform: translateY(0);
-        }
-
-        .alert {
-            padding: 16px;
-            border-radius: 12px;
-            margin-bottom: 24px;
-            font-weight: 500;
-        }
-
-        .alert-success {
-            background: #d1fae5;
-            color: #065f46;
-            border: 1px solid #a7f3d0;
-        }
-
-        .alert-error {
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #fca5a5;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .forgot-password {
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .forgot-password a {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        .forgot-password a:hover {
-            text-decoration: underline;
-        }
-
-        .password-strength {
-            margin-top: 8px;
-            height: 4px;
-            background: #e5e7eb;
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .password-strength-bar {
-            height: 100%;
-            transition: all 0.3s ease;
-            border-radius: 2px;
-        }
-
-        .strength-weak { width: 25%; background: #ef4444; }
-        .strength-fair { width: 50%; background: #f59e0b; }
-        .strength-good { width: 75%; background: #10b981; }
-        .strength-strong { width: 100%; background: #059669; }
-
-        @media (max-width: 480px) {
-            .auth-container {
-                margin: 10px;
-                border-radius: 16px;
-            }
-            
-            .auth-header {
-                padding: 30px 20px;
-            }
-            
-            .auth-content {
-                padding: 30px 20px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="auth-container">
-        <div class="auth-header">
-            <h1>🔐 SecureAuth</h1>
-            <p>Advanced Authentication System</p>
-        </div>
-        
-        <div class="auth-content">
-            {% if message %}
-                <div class="alert alert-{{ 'success' if success else 'error' }}">
-                    {{ message }}
-                </div>
-            {% endif %}
-
-            <div class="tab-buttons">
-                <button class="tab-button active" onclick="switchTab('login')">Sign In</button>
-                <button class="tab-button" onclick="switchTab('register')">Sign Up</button>
-            </div>
-
-            <!-- Login Form -->
-            <div id="login-tab" class="tab-content active">
-                <form method="POST" action="/login">
-                    <div class="form-group">
-                        <label class="form-label">Username or Email</label>
-                        <input type="text" name="username" class="form-input" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Password</label>
-                        <input type="password" name="password" class="form-input" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" name="remember_me" style="margin-right: 8px;">
-                            Remember me for 30 days
-                        </label>
-                    </div>
-                    
-                    <button type="submit" class="form-button">Sign In</button>
-                </form>
-                
-                <div class="forgot-password">
-                    <a href="/forgot-password">Forgot your password?</a>
-                </div>
-            </div>
-
-            <!-- Register Form -->
-            <div id="register-tab" class="tab-content">
-                <form method="POST" action="/register">
-                    <div class="form-group">
-                        <label class="form-label">Full Name</label>
-                        <input type="text" name="full_name" class="form-input" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Username</label>
-                        <input type="text" name="username" class="form-input" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Email</label>
-                        <input type="email" name="email" class="form-input" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Password</label>
-                        <input type="password" name="password" class="form-input" id="password" required onkeyup="checkPasswordStrength()">
-                        <div class="password-strength">
-                            <div class="password-strength-bar" id="strength-bar"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Confirm Password</label>
-                        <input type="password" name="confirm_password" class="form-input" required>
-                    </div>
-                    
-                    <button type="submit" class="form-button">Create Account</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        function switchTab(tab) {
-            // Remove active class from all buttons and content
-            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            
-            // Add active class to clicked button and corresponding content
-            event.target.classList.add('active');
-            document.getElementById(tab + '-tab').classList.add('active');
-        }
-
-        function checkPasswordStrength() {
-            const password = document.getElementById('password').value;
-            const strengthBar = document.getElementById('strength-bar');
-            
-            let strength = 0;
-            if (password.length >= 8) strength++;
-            if (password.match(/[a-z]/)) strength++;
-            if (password.match(/[A-Z]/)) strength++;
-            if (password.match(/[0-9]/)) strength++;
-            if (password.match(/[^a-zA-Z0-9]/)) strength++;
-            
-            strengthBar.className = 'password-strength-bar';
-            
-            if (strength <= 2) {
-                strengthBar.classList.add('strength-weak');
-            } else if (strength === 3) {
-                strengthBar.classList.add('strength-fair');
-            } else if (strength === 4) {
-                strengthBar.classList.add('strength-good');
-            } else {
-                strengthBar.classList.add('strength-strong');
-            }
-        }
-    </script>
-</body>
-</html>'''
-
-# Dashboard template
-DASHBOARD_TEMPLATE = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - SecureAuth</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #f8fafc;
-            min-height: 100vh;
-        }
-
-        .navbar {
-            background: white;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .navbar h1 {
-            color: #667eea;
-            font-size: 1.5rem;
-        }
-
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .logout-btn {
-            background: #ef4444;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        .logout-btn:hover {
-            background: #dc2626;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 2rem;
-        }
-
-        .welcome-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem;
-            border-radius: 1rem;
-            margin-bottom: 2rem;
-        }
-
-        .welcome-card h2 {
-            font-size: 2rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .stat-card h3 {
-            color: #6b7280;
-            font-size: 0.875rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .stat-card .value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #111827;
-        }
-
-        .sessions-table {
-            background: white;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-        }
-
-        .table-header {
-            background: #f9fafb;
-            padding: 1rem;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .table-header h3 {
-            color: #111827;
-            font-size: 1.125rem;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th, td {
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        th {
-            background: #f9fafb;
-            font-weight: 600;
-            color: #6b7280;
-        }
-
-        .status-active {
-            background: #d1fae5;
-            color: #065f46;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-    </style>
-</head>
-<body>
-    <nav class="navbar">
-        <h1>🔐 SecureAuth Dashboard</h1>
-        <div class="user-info">
-            <span>Welcome, {{ user.full_name }}!</span>
-            <a href="/logout" class="logout-btn">Logout</a>
-        </div>
-    </nav>
-
-    <div class="container">
-        <div class="welcome-card">
-            <h2>Welcome back, {{ user.full_name }}! 👋</h2>
-            <p>You're successfully authenticated and ready to go.</p>
-        </div>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>Active Sessions</h3>
-                <div class="value">{{ sessions|length }}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Last Login</h3>
-                <div class="value" style="font-size: 1rem;">{{ user.last_login or 'First login' }}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Account Status</h3>
-                <div class="value" style="font-size: 1rem; color: #10b981;">Active</div>
-            </div>
-        </div>
-
-        <div class="sessions-table">
-            <div class="table-header">
-                <h3>Active Sessions</h3>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Device</th>
-                        <th>IP Address</th>
-                        <th>Location</th>
-                        <th>Created</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for session in sessions %}
-                    <tr>
-                        <td>{{ (request.headers.get('User-Agent', 'Unknown Device'))[:50] + '...' if request.headers.get('User-Agent', '') | length > 50 else request.headers.get('User-Agent', 'Unknown Device') }}</td>
-                        <td>{{ session.get('ip_address', 'Unknown') }}</td>
-                        <td>{{ session.get('location', 'Unknown') }}</td>
-                        <td>{{ session.created_at.strftime('%Y-%m-%d %H:%M') if session.created_at else 'N/A' }}</td>
-                        <td><span class="status-active">Active</span></td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="5" style="text-align: center; color: #6b7280;">No active sessions found</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</body>
-</html>'''
-
 # Helper functions
 def hash_password(password):
     """Hash a password using bcrypt"""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verify_password(password, hashed):
     """Verify a password against its hash"""
@@ -672,6 +670,10 @@ def generate_jwt_token(user_id, remember_me=False):
         'iat': datetime.utcnow()
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def generate_reset_token():
+    """Generate a secure reset token"""
+    return secrets.token_urlsafe(32)
 
 def get_client_ip():
     """Get the client's IP address"""
@@ -697,9 +699,9 @@ def create_user_session(user_id, token, remember_me=False):
         expires_at = datetime.now() + timedelta(days=30 if remember_me else 1)
         
         cursor.execute("""
-            INSERT INTO user_sessions (user_id, session_token, expires_at)
-            VALUES (%s, %s, %s)
-        """, (user_id, token, expires_at))
+            INSERT INTO user_sessions (user_id, session_token, expires_at, is_active)
+            VALUES (%s, %s, %s, %s)
+        """, (user_id, token, expires_at, True))
         
         connection.commit()
         cursor.close()
@@ -707,15 +709,118 @@ def create_user_session(user_id, token, remember_me=False):
         
     except Error as e:
         print(f"Session creation error: {e}")
+        connection.rollback()
         return False
     finally:
         connection.close()
+
+def send_reset_email(email, reset_token):
+    """Send password reset email"""
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_CONFIG['email']
+        msg['To'] = email
+        msg['Subject'] = "Password Reset Request"
+        
+        reset_link = f"{request.host_url}reset-password/{reset_token}"
+        
+        body = f"""
+        Hello,
+        
+        You have requested a password reset. Click the link below to reset your password:
+        
+        {reset_link}
+        
+        This link will expire in 1 hour.
+        
+        If you did not request this reset, please ignore this email.
+        
+        Best regards,
+        Your App Team
+        """
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
+        server.starttls()
+        server.login(EMAIL_CONFIG['email'], EMAIL_CONFIG['password'])
+        server.send_message(msg)
+        server.quit()
+        
+        return True
+    except Exception as e:
+        print(f"Email sending error: {e}")
+        return False
 
 def log_login_attempt(username, success):
     """Log login attempts (basic implementation)"""
     print(f"Login attempt - Username: {username}, Success: {success}, IP: {get_client_ip()}")
 
-# Initialize database (check if tables exist)
+# Initialize database tables if they don't exist
+def init_database():
+    """Initialize database tables"""
+    connection = get_db_connection()
+    if not connection:
+        print("❌ Failed to connect to database")
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        
+        # Create users table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                full_name VARCHAR(100) NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                failed_attempts INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP NULL
+            )
+        """)
+        
+        # Create user_sessions table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                session_token TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Create password_resets table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                reset_token VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT FALSE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        
+        connection.commit()
+        cursor.close()
+        print("✅ Database tables initialized successfully")
+        return True
+        
+    except Error as e:
+        print(f"❌ Database initialization error: {e}")
+        connection.rollback()
+        return False
+    finally:
+        connection.close()
+
+# Check database connection
 def check_database():
     """Check if database connection works"""
     connection = get_db_connection()
@@ -725,8 +830,7 @@ def check_database():
     
     try:
         cursor = connection.cursor()
-        # Test if users table exists
-        cursor.execute("SELECT COUNT(*) FROM users LIMIT 1")
+        cursor.execute("SELECT 1")
         cursor.fetchone()
         cursor.close()
         print("✅ Database connection successful")
@@ -770,8 +874,8 @@ def login():
             user = cursor.fetchone()
             
             if user and verify_password(password, user['password']):
-                # Update last login
-                cursor.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
+                # Reset failed attempts on successful login
+                cursor.execute("UPDATE users SET last_login = NOW(), failed_attempts = 0 WHERE id = %s", (user['id'],))
                 connection.commit()
                 
                 # Generate JWT token
@@ -791,6 +895,11 @@ def login():
                     return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
                                                 message="Session creation failed", success=False)
             else:
+                # Increment failed attempts
+                if user:
+                    cursor.execute("UPDATE users SET failed_attempts = failed_attempts + 1 WHERE id = %s", (user['id'],))
+                    connection.commit()
+                
                 log_login_attempt(username, False)
                 return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
                                             message="Invalid username or password", success=False)
@@ -860,6 +969,7 @@ def register():
         
     except Error as e:
         print(f"Registration error: {e}")
+        connection.rollback()
         return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
                                     message="An error occurred during registration", success=False)
     finally:
@@ -906,6 +1016,7 @@ def logout():
             cursor.close()
         except Error as e:
             print(f"Error logging out: {e}")
+            connection.rollback()
         finally:
             connection.close()
     
@@ -916,144 +1027,277 @@ def logout():
 
 @app.route('/forgot-password')
 def forgot_password():
-    return render_template_string('''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forgot Password</title>
-</head>
-<body>
-    <h1>Forgot Password</h1>
-    <p>Please enter your email to reset your password.</p>
-    <form method="POST" action="/reset-password">
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" required>
-        <button type="submit">Reset Password</button>
-    </form>
-</body>
-</html>''')
+    return render_template_string(RESET_PASSWORD_TEMPLATE)
 
-@app.route('/reset-password', methods=['POST'])
+@app.route('/reset-password', methods=['GET', 'POST'])
 def reset_password():
-    email = request.form.get('email', '').strip()
-    
-    if not email:
-        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                      message="Please provide your email", success=False)
-    
-    connection = get_db_connection()
-    if not connection:
-        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                      message="Database connection error", success=False)
-    
-    try:
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if email exists
-        cursor.execute("SELECT id, full_name FROM users WHERE email = %s", (email,))
-        user = cursor.fetchone()
-        
-        if user:
-            # Generate a password reset token (this could be implemented using a real token system)
-            reset_token = secrets.token_hex(16)
-            reset_expiry = datetime.utcnow() + timedelta(hours=1)
-            
-            cursor.execute("""
-                INSERT INTO password_resets (user_id, reset_token, reset_expiry)
-                VALUES (%s, %s, %s)
-            """, (user['id'], reset_token, reset_expiry))
-            connection.commit()
-
-            # Send an email (this is a placeholder and should be replaced with actual email sending logic)
-            print(f"Password reset link for {user['full_name']} is: /reset-password/{reset_token}")
-            
-            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                          message="Password reset link has been sent to your email", success=True)
-        else:
-            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                          message="No account found with that email", success=False)
-        
-    except Error as e:
-        print(f"Error resetting password: {e}")
-        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                      message="An error occurred while resetting your password", success=False)
-    finally:
-        connection.close()
-
-@app.route('/reset-password/<reset_token>', methods=['GET', 'POST'])
-def reset_password_with_token(reset_token):
-    connection = get_db_connection()
-    if not connection:
-        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                      message="Database connection error", success=False)
-    
     if request.method == 'POST':
-        new_password = request.form.get('password', '').strip()
-        confirm_password = request.form.get('confirm_password', '').strip()
+        email = request.form.get('email', '').strip()
         
-        if new_password != confirm_password:
-            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                          message="Passwords do not match", success=False)
+        if not email:
+            return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                        message="Please enter your email address", success=False)
         
-        if len(new_password) < 8:
-            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                          message="Password must be at least 8 characters", success=False)
+        connection = get_db_connection()
+        if not connection:
+            return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                        message="Database connection error", success=False)
         
         try:
             cursor = connection.cursor(dictionary=True)
             
-            # Check if reset token is valid
-            cursor.execute("""
-                SELECT pr.user_id, u.email 
-                FROM password_resets pr 
-                JOIN users u ON pr.user_id = u.id
-                WHERE pr.reset_token = %s AND pr.reset_expiry > NOW()
-            """, (reset_token,))
+            # Check if user exists
+            cursor.execute("SELECT id FROM users WHERE email = %s AND is_active = TRUE", (email,))
+            user = cursor.fetchone()
             
-            reset_data = cursor.fetchone()
-            
-            if reset_data:
-                hashed_password = hash_password(new_password)
+            if user:
+                # Generate reset token
+                reset_token = generate_reset_token()
+                expires_at = datetime.now() + timedelta(hours=1)
                 
-                cursor.execute("UPDATE users SET password = %s WHERE id = %s", (hashed_password, reset_data['user_id']))
+                # Store reset token
+                cursor.execute("""
+                    INSERT INTO password_resets (user_id, reset_token, expires_at)
+                    VALUES (%s, %s, %s)
+                """, (user['id'], reset_token, expires_at))
+                
                 connection.commit()
-
-                # Invalidate the reset token
-                cursor.execute("DELETE FROM password_resets WHERE reset_token = %s", (reset_token,))
-                connection.commit()
-
-                return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                              message="Your password has been reset successfully. Please log in.", success=True)
+                
+                # Send reset email (simplified - in production, use proper email service)
+                if send_reset_email(email, reset_token):
+                    return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                                message="Password reset link sent to your email", success=True)
+                else:
+                    return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                                message="Failed to send reset email. Please try again.", success=False)
             else:
-                return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                              message="Invalid or expired reset token", success=False)
+                # Don't reveal if email exists or not for security
+                return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                            message="If the email exists, a reset link has been sent", success=True)
+                
         except Error as e:
-            print(f"Error resetting password with token: {e}")
-            return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                          message="An error occurred while resetting your password", success=False)
+            print(f"Reset password error: {e}")
+            connection.rollback()
+            return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                        message="An error occurred. Please try again.", success=False)
         finally:
+            cursor.close()
             connection.close()
+    
+    return render_template_string(RESET_PASSWORD_TEMPLATE)
 
-    return render_template_string('''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reset Password</title>
-</head>
-<body>
-    <h1>Reset Password</h1>
-    <form method="POST" action="/reset-password/{{ reset_token }}">
-        <label for="password">New Password</label>
-        <input type="password" id="password" name="password" required>
-        <label for="confirm_password">Confirm Password</label>
-        <input type="password" id="confirm_password" name="confirm_password" required>
-        <button type="submit">Submit</button>
-    </form>
-</body>
-</html>''', reset_token=reset_token)
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password_confirm(token):
+    connection = get_db_connection()
+    if not connection:
+        return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                    message="Database connection error", success=False, token=token)
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        # Verify reset token
+        cursor.execute("""
+            SELECT pr.*, u.email FROM password_resets pr
+            JOIN users u ON pr.user_id = u.id
+            WHERE pr.reset_token = %s AND pr.expires_at > NOW() AND pr.used = FALSE
+        """, (token,))
+        
+        reset_data = cursor.fetchone()
+        
+        if not reset_data:
+            return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                        message="Invalid or expired reset token", success=False)
+        
+        if request.method == 'POST':
+            password = request.form.get('password', '')
+            confirm_password = request.form.get('confirm_password', '')
+            
+            if not password or not confirm_password:
+                return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                            message="Please fill in all fields", success=False, token=token)
+            
+            if password != confirm_password:
+                return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                            message="Passwords do not match", success=False, token=token)
+            
+            if len(password) < 8:
+                return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                            message="Password must be at least 8 characters", success=False, token=token)
+            
+            # Update password
+            password_hash = hash_password(password)
+            
+            cursor.execute("UPDATE users SET password = %s WHERE id = %s", 
+                         (password_hash, reset_data['user_id']))
+            
+            # Mark reset token as used
+            cursor.execute("UPDATE password_resets SET used = TRUE WHERE id = %s", 
+                         (reset_data['id'],))
+            
+            connection.commit()
+            
+            return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                        message="Password updated successfully! You can now sign in.", success=True)
+        
+        return render_template_string(RESET_PASSWORD_TEMPLATE, token=token)
+        
+    except Error as e:
+        print(f"Reset password confirm error: {e}")
+        connection.rollback()
+        return render_template_string(RESET_PASSWORD_TEMPLATE, 
+                                    message="An error occurred. Please try again.", success=False, token=token)
+    finally:
+        cursor.close()
+        connection.close()
 
+# API Routes for additional functionality
+@app.route('/api/user/profile', methods=['GET'])
+@token_required
+def get_user_profile():
+    """Get current user profile"""
+    user = request.current_user
+    return jsonify({
+        'id': user['user_id'],
+        'username': user['username'],
+        'email': user['email'],
+        'full_name': user['full_name'],
+        'created_at': user['created_at'].isoformat() if user['created_at'] else None,
+        'last_login': user['last_login'].isoformat() if user['last_login'] else None
+    })
+
+@app.route('/api/user/sessions', methods=['GET'])
+@token_required
+def get_user_sessions():
+    """Get user's active sessions"""
+    user = request.current_user
+    connection = get_db_connection()
+    
+    if not connection:
+        return jsonify({'error': 'Database connection error'}), 500
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, created_at, expires_at, is_active
+            FROM user_sessions 
+            WHERE user_id = %s AND is_active = TRUE AND expires_at > NOW()
+            ORDER BY created_at DESC
+        """, (user['user_id'],))
+        
+        sessions = cursor.fetchall()
+        
+        # Convert datetime objects to strings
+        for session in sessions:
+            session['created_at'] = session['created_at'].isoformat()
+            session['expires_at'] = session['expires_at'].isoformat()
+        
+        return jsonify({'sessions': sessions})
+        
+    except Error as e:
+        print(f"Error fetching sessions: {e}")
+        return jsonify({'error': 'Failed to fetch sessions'}), 500
+    finally:
+        cursor.close()
+        connection.close()
+
+@app.route('/api/user/logout-all', methods=['POST'])
+@token_required
+def logout_all_sessions():
+    """Logout from all sessions"""
+    user = request.current_user
+    connection = get_db_connection()
+    
+    if not connection:
+        return jsonify({'error': 'Database connection error'}), 500
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute("UPDATE user_sessions SET is_active = FALSE WHERE user_id = %s", (user['user_id'],))
+        connection.commit()
+        
+        # Remove current session cookie
+        response = make_response(jsonify({'message': 'Logged out from all sessions'}))
+        response.delete_cookie('auth_token')
+        return response
+        
+    except Error as e:
+        print(f"Error logging out all sessions: {e}")
+        connection.rollback()
+        return jsonify({'error': 'Failed to logout all sessions'}), 500
+    finally:
+        cursor.close()
+        connection.close()
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Page Not Found</title>
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+            .error-container { max-width: 500px; margin: 0 auto; }
+            .error-code { font-size: 72px; color: #667eea; margin-bottom: 20px; }
+            .error-message { font-size: 24px; margin-bottom: 30px; }
+            .back-link { color: #667eea; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="error-container">
+            <div class="error-code">404</div>
+            <div class="error-message">Page Not Found</div>
+            <a href="/login" class="back-link">Return to Login</a>
+        </div>
+    </body>
+    </html>
+    '''), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Internal Server Error</title>
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+            .error-container { max-width: 500px; margin: 0 auto; }
+            .error-code { font-size: 72px; color: #dc3545; margin-bottom: 20px; }
+            .error-message { font-size: 24px; margin-bottom: 30px; }
+            .back-link { color: #667eea; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <div class="error-container">
+            <div class="error-code">500</div>
+            <div class="error-message">Internal Server Error</div>
+            <a href="/login" class="back-link">Return to Login</a>
+        </div>
+    </body>
+    </html>
+    '''), 500
+
+# Main execution
 if __name__ == '__main__':
-    check_database()  # Ensure the database connection is successful
-    app.run(debug=True)
+    print("🚀 Starting Flask Authentication System...")
+    
+    # Check database connection
+    if not check_database():
+        print("❌ Failed to connect to database. Please check your database configuration.")
+        exit(1)
+    
+    # Initialize database tables
+    if not init_database():
+        print("❌ Failed to initialize database tables.")
+        exit(1)
+    
+    print("✅ Database connection and initialization successful!")
+    print("📧 Note: Email functionality requires proper SMTP configuration")
+    print("🔐 Remember to change SECRET_KEY and JWT_SECRET in production")
+    print("🌐 Server starting on http://localhost:5000")
+    
+    # Run the application
+    app.run(debug=True, host='0.0.0.0', port=5000)
