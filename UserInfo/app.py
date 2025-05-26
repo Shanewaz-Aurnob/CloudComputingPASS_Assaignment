@@ -653,12 +653,50 @@ DASHBOARD_TEMPLATE = '''<!DOCTYPE html>
 def init_database():
     connection = get_db_connection()
     if not connection:
+        print("❌ Failed to connect to database")
         return False
     
     try:
         cursor = connection.cursor()
         
-        # Users table
+        # Check if users table exists and has correct structure
+        cursor.execute("SHOW TABLES LIKE 'users'")
+        table_exists = cursor.fetchone()
+        
+        if table_exists:
+            # Check if password_hash column exists
+            cursor.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
+            column_exists = cursor.fetchone()
+            
+            if not column_exists:
+                print("🔧 Adding missing password_hash column to users table...")
+                try:
+                    # Try to add the column (might fail if 'password' column exists)
+                    cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)")
+                    
+                    # If there's an old 'password' column, migrate data
+                    cursor.execute("SHOW COLUMNS FROM users LIKE 'password'")
+                    old_password_exists = cursor.fetchone()
+                    
+                    if old_password_exists:
+                        print("🔄 Migrating password data...")
+                        # Get all users with old password format
+                        cursor.execute("SELECT id, password FROM users WHERE password IS NOT NULL")
+                        users_to_migrate = cursor.fetchall()
+                        
+                        for user_id, old_password in users_to_migrate:
+                            # Hash the old password and update
+                            new_hash = hash_password(old_password)
+                            cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user_id))
+                        
+                        # Drop the old password column
+                        cursor.execute("ALTER TABLE users DROP COLUMN password")
+                        print("✅ Password migration completed")
+                        
+                except Error as alter_error:
+                    print(f"⚠️  Column modification error: {alter_error}")
+        
+        # Create users table with correct structure
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -704,10 +742,12 @@ def init_database():
         
         connection.commit()
         cursor.close()
+        
+        print("✅ Database schema verified and updated")
         return True
         
     except Error as e:
-        print(f"Database initialization error: {e}")
+        print(f"❌ Database initialization error: {e}")
         return False
     finally:
         connection.close()
@@ -805,34 +845,62 @@ def login():
         
         try:
             cursor = connection.cursor(dictionary=True)
-            cursor.execute("""
+            
+            # First check what columns exist in the users table
+            cursor.execute("SHOW COLUMNS FROM users")
+            columns = [row['Field'] for row in cursor.fetchall()]
+            
+            # Use appropriate password column
+            password_column = 'password_hash' if 'password_hash' in columns else 'password'
+            
+            cursor.execute(f"""
                 SELECT * FROM users 
                 WHERE (username = %s OR email = %s) AND is_active = TRUE
             """, (username, username))
             
             user = cursor.fetchone()
             
-            if user and verify_password(password, user['password_hash']):
-                # Update last login
-                cursor.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
-                connection.commit()
-                
-                # Generate JWT token
-                token = generate_jwt_token(user['id'], remember_me)
-                
-                # Create session record
-                if create_user_session(user['id'], token, remember_me):
-                    log_login_attempt(username, True)
+            if user:
+                # Check password based on available column
+                password_valid = False
+                if password_column == 'password_hash' and password_column in user:
+                    password_valid = verify_password(password, user[password_column])
+                elif 'password' in user:
+                    # Handle plain text password (less secure, for backward compatibility)
+                    password_valid = (password == user['password'])
                     
-                    # Set cookie and redirect
-                    response = make_response(redirect(url_for('dashboard')))
-                    response.set_cookie('auth_token', token, 
-                                      max_age=30*24*60*60 if remember_me else 24*60*60,
-                                      httponly=True, secure=False, samesite='Lax')
-                    return response
+                    # If login successful with plain text, upgrade to hashed password
+                    if password_valid and 'password_hash' in columns:
+                        new_hash = hash_password(password)
+                        cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", 
+                                     (new_hash, user['id']))
+                        connection.commit()
+                
+                if password_valid:
+                    # Update last login
+                    cursor.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
+                    connection.commit()
+                    
+                    # Generate JWT token
+                    token = generate_jwt_token(user['id'], remember_me)
+                    
+                    # Create session record
+                    if create_user_session(user['id'], token, remember_me):
+                        log_login_attempt(username, True)
+                        
+                        # Set cookie and redirect
+                        response = make_response(redirect(url_for('dashboard')))
+                        response.set_cookie('auth_token', token, 
+                                          max_age=30*24*60*60 if remember_me else 24*60*60,
+                                          httponly=True, secure=False, samesite='Lax')
+                        return response
+                    else:
+                        return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
+                                                    message="Session creation failed", success=False)
                 else:
+                    log_login_attempt(username, False)
                     return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
-                                                message="Session creation failed", success=False)
+                                                message="Invalid username or password", success=False)
             else:
                 log_login_attempt(username, False)
                 return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
@@ -887,12 +955,24 @@ def register():
             return render_template_string(ADVANCED_LOGIN_TEMPLATE, 
                                         message="Username or email already exists", success=False)
         
-        # Create new user
+        # Check what columns exist in the users table
+        cursor.execute("SHOW COLUMNS FROM users")
+        columns = [row[0] for row in cursor.fetchall()]
+        
+        # Create new user with proper column structure
         password_hash = hash_password(password)
-        cursor.execute("""
-            INSERT INTO users (username, email, full_name, password_hash)
-            VALUES (%s, %s, %s, %s)
-        """, (username, email, full_name, password_hash))
+        
+        if 'password_hash' in columns:
+            cursor.execute("""
+                INSERT INTO users (username, email, full_name, password_hash)
+                VALUES (%s, %s, %s, %s)
+            """, (username, email, full_name, password_hash))
+        else:
+            # Fallback for older schema (less secure)
+            cursor.execute("""
+                INSERT INTO users (username, email, full_name, password)
+                VALUES (%s, %s, %s, %s)
+            """, (username, email, full_name, password_hash))
         
         connection.commit()
         cursor.close()
@@ -1202,6 +1282,8 @@ def internal_error(error):
 if __name__ == '__main__':
     print("🔐 Initializing SecureAuth System...")
     
+    # Force database initialization
+    print("🔧 Checking database schema...")
     if init_database():
         print("✅ Database initialized successfully")
         print("🚀 Starting Flask application...")
@@ -1213,8 +1295,50 @@ if __name__ == '__main__':
         print("   • Login Attempt Logging")
         print("   • Responsive UI Design")
         print("   • RESTful API Endpoints")
+        print("   • Database Schema Auto-Migration")
+        
+        # Create a test user if none exist
+        try:
+            connection = get_db_connection()
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT COUNT(*) as count FROM users")
+                user_count = cursor.fetchone()[0]
+                
+                if user_count == 0:
+                    print("👤 Creating default admin user...")
+                    admin_password = "admin123"
+                    admin_hash = hash_password(admin_password)
+                    
+                    # Check column structure
+                    cursor.execute("SHOW COLUMNS FROM users")
+                    columns = [row[0] for row in cursor.fetchall()]
+                    
+                    if 'password_hash' in columns:
+                        cursor.execute("""
+                            INSERT INTO users (username, email, full_name, password_hash)
+                            VALUES (%s, %s, %s, %s)
+                        """, ('admin', 'admin@example.com', 'Administrator', admin_hash))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO users (username, email, full_name, password)
+                            VALUES (%s, %s, %s, %s)
+                        """, ('admin', 'admin@example.com', 'Administrator', admin_hash))
+                    
+                    connection.commit()
+                    print("✅ Default user created - Username: admin, Password: admin123")
+                
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            print(f"⚠️  Could not create default user: {e}")
         
         # Run the application
         app.run(debug=True, host='0.0.0.0', port=5000)
     else:
         print("❌ Failed to initialize database. Please check your MySQL connection.")
+        print("🔍 Troubleshooting steps:")
+        print("   1. Verify your database credentials in DB_CONFIG")
+        print("   2. Ensure MySQL server is running")
+        print("   3. Check if the database exists")
+        print("   4. Verify network connectivity to the database server")
