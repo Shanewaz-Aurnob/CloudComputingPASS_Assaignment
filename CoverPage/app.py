@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, send_from_directory
 import os
 
 app = Flask(__name__)
@@ -345,57 +345,55 @@ HTML_TEMPLATE = """
             <h2>Course Code: CSE-814</h2>
         </div>
         
-       <div class="content">
-    <div class="instructor-student-grid">
-        <!-- Instructor Card -->
-        <div class="card">
-            <div class="card-label">Submitted To:</div>
-            <div class="profile-section">
-                <div class="profile-image">
-                    <img src="Images/FB_IMG_1748358006261.jpg" alt="Dr. Atiqur Rahman"
-                         onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
+        <div class="content">
+            <div class="instructor-student-grid">
+                <!-- Instructor Card -->
+                <div class="card">
+                    <div class="card-label">Submitted To:</div>
+                    <div class="profile-section">
+                        <div class="profile-image">
+                            <img src="{{ url_for('static', filename='Images/FB_IMG_1748358006261.jpg') }}" alt="Dr. Atiqur Rahman"
+                                 onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
+                        </div>
+                        <div class="profile-info">
+                            <h3>Dr. Atiqur Rahman</h3>
+                            <p>Associate Professor</p>
+                            <p>Department of Computer Science and Engineering</p>
+                            <p>University of Chittagong</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="profile-info">
-                    <h3>Dr. Atiqur Rahman</h3>
-                    <p>Associate Professor</p>
-                    <p>Department of Computer Science and Engineering</p>
-                    <p>University of Chittagong</p>
-                </div>
-            </div>
-        </div>
 
-        <!-- Student Card -->
-        <div class="card">
-            <div class="card-label">Submitted From:</div>
-            <div class="profile-section">
-                <div class="profile-image">
-                    <img src="Images/IMG_0001.JPG" alt="Shanewaz Aurnob"
-                         onerror="this.style.display='none'; this.parentElement.innerHTML='SA';">
-                    <!-- Replace 'your_student_image.jpg' with actual image filename if you have it -->
-                </div>
-                <div class="profile-info">
-                    <h3>Shanewaz Aurnob</h3>
-                    <p>Student ID: 20701066</p>
-                    <p>Department of Computer Science and Engineering</p>
-                    <p>University of Chittagong</p>
+                <!-- Student Card -->
+                <div class="card">
+                    <div class="card-label">Submitted From:</div>
+                    <div class="profile-section">
+                        <div class="profile-image">
+                            <img src="{{ url_for('static', filename='Images/IMG_0001.JPG') }}" alt="Shanewaz Aurnob"
+                                 onerror="this.style.display='none'; this.parentElement.innerHTML='SA';">
+                        </div>
+                        <div class="profile-info">
+                            <h3>Shanewaz Aurnob</h3>
+                            <p>Student ID: 20701066</p>
+                            <p>Department of Computer Science and Engineering</p>
+                            <p>University of Chittagong</p>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
 
             <div class="problems-section">
                 <h2 class="problems-title">Assignment Problems</h2>
                 <div class="problems-grid">
                     <div class="problem-card">
-                        <div class="problem-number">Problem 1: Even Number Generator</div>
+                        <div class="problem-number">Problem 1: N Even Number Generator</div>
                         <a href="https://evennumbergenerator-f14k.onrender.com/" class="problem-link" target="_blank">
                             View Solution →
                         </a>
                     </div>
                     
                     <div class="problem-card">
-                        <div class="problem-number">Problem 2: Basic Application</div>
+                        <div class="problem-number">Problem 2: Multiply Two Metrices</div>
                         <a href="https://cloudcomputingpass-assaignment.onrender.com/" class="problem-link" target="_blank">
                             View Solution →
                         </a>
@@ -409,14 +407,14 @@ HTML_TEMPLATE = """
                     </div>
                     
                     <div class="problem-card">
-                        <div class="problem-number">Problem 4: Advanced Application</div>
+                        <div class="problem-number">Problem 4: Nth Largest Number</div>
                         <a href="https://cloudcomputingpass-assaignment-4.onrender.com/" class="problem-link" target="_blank">
                             View Solution →
                         </a>
                     </div>
                     
                     <div class="problem-card">
-                        <div class="problem-number">Problem 5: Login System</div>
+                        <div class="problem-number">Problem 5: User Info</div>
                         <a href="https://cloudcomputingpass-assaignment-2.onrender.com/login" class="problem-link" target="_blank">
                             View Solution →
                         </a>
@@ -496,6 +494,16 @@ def problems_list():
         ]
     }
     return problems
+
+# Optional: Route to serve images from Images folder (alternative method)
+@app.route('/Images/<filename>')
+def serve_image(filename):
+    """Serve images from the Images directory (alternative to static folder)"""
+    try:
+        return send_from_directory('Images', filename)
+    except FileNotFoundError:
+        # Return a default image or 404
+        return "Image not found", 404
 
 if __name__ == '__main__':
     # Get port from environment variable (for deployment) or default to 5000
