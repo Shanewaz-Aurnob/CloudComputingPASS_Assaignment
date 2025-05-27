@@ -352,7 +352,7 @@ HTML_TEMPLATE = """
                     <div class="profile-section">
                         <div class="profile-image">
                             <!-- Replace with actual image URL -->
-                            <img src="https://via.placeholder.com/80x80/667eea/ffffff?text=DR" alt="Dr. Atiqur Rahman" onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
+                            <img src="Images/FB_IMG_1748358006261.jpg" alt="Dr. Atiqur Rahman" onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
                         </div>
                         <div class="profile-info">
                             <h3>Dr. Atiqur Rahman</h3>
