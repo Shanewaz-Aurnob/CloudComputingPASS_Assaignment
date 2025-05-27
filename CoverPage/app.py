@@ -1,3 +1,10 @@
+from flask import Flask, render_template_string
+import os
+
+app = Flask(__name__)
+
+# HTML Template with embedded CSS and styling
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -311,11 +318,29 @@
                 transform: translateY(0);
             }
         }
+
+        .status-indicator {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
     <div class="container animate-fadeIn">
         <div class="header">
+            <div class="status-indicator" title="Live Application"></div>
             <h1>Cloud Computing (Programs on PAAS) Assignment</h1>
             <h2>Course Code: CSE-814</h2>
         </div>
@@ -327,7 +352,7 @@
                     <div class="profile-section">
                         <div class="profile-image">
                             <!-- Replace with actual image URL -->
-                            <img src="Images/FB_IMG_1748358006261.jpg" alt="Dr. Atiqur Rahman" onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
+                            <img src="https://via.placeholder.com/80x80/667eea/ffffff?text=DR" alt="Dr. Atiqur Rahman" onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
                         </div>
                         <div class="profile-info">
                             <h3>Dr. Atiqur Rahman</h3>
@@ -343,7 +368,7 @@
                     <div class="profile-section">
                         <div class="profile-image">
                             <!-- Replace with actual image URL -->
-                            <img src="Images/IMG_0001.JPG" alt="Shanewaz Aurnob" onerror="this.style.display='none'; this.parentElement.innerHTML='SA';">
+                            <img src="https://via.placeholder.com/80x80/667eea/ffffff?text=SA" alt="Shanewaz Aurnob" onerror="this.style.display='none'; this.parentElement.innerHTML='SA';">
                         </div>
                         <div class="profile-info">
                             <h3>Shanewaz Aurnob</h3>
@@ -359,35 +384,35 @@
                 <h2 class="problems-title">Assignment Problems</h2>
                 <div class="problems-grid">
                     <div class="problem-card">
-                        <div class="problem-number">Problem 1</div>
-                        <a href="https://evennumbergenerator-f14k.onrender.com" class="problem-link" target="_blank">
+                        <div class="problem-number">Problem 1: Even Number Generator</div>
+                        <a href="https://evennumbergenerator-f14k.onrender.com/" class="problem-link" target="_blank">
                             View Solution →
                         </a>
                     </div>
                     
                     <div class="problem-card">
-                        <div class="problem-number">Problem 2</div>
-                        <a href="https://cloudcomputingpass-assaignment.onrender.com" class="problem-link" target="_blank">
+                        <div class="problem-number">Problem 2: Basic Application</div>
+                        <a href="https://cloudcomputingpass-assaignment.onrender.com/" class="problem-link" target="_blank">
                             View Solution →
                         </a>
                     </div>
                     
                     <div class="problem-card">
-                        <div class="problem-number">Problem 3</div>
+                        <div class="problem-number">Problem 3: User Authentication</div>
                         <a href="https://userauthentication-dygk.onrender.com/login" class="problem-link" target="_blank">
                             View Solution →
                         </a>
                     </div>
                     
                     <div class="problem-card">
-                        <div class="problem-number">Problem 4</div>
-                        <a href="https://cloudcomputingpass-assaignment-4.onrender.com" class="problem-link" target="_blank">
+                        <div class="problem-number">Problem 4: Advanced Application</div>
+                        <a href="https://cloudcomputingpass-assaignment-4.onrender.com/" class="problem-link" target="_blank">
                             View Solution →
                         </a>
                     </div>
                     
                     <div class="problem-card">
-                        <div class="problem-number">Problem 5</div>
+                        <div class="problem-number">Problem 5: Login System</div>
                         <a href="https://cloudcomputingpass-assaignment-2.onrender.com/login" class="problem-link" target="_blank">
                             View Solution →
                         </a>
@@ -399,7 +424,82 @@
         <div class="footer">
             <div class="university-logo">UC</div>
             <p>University of Chittagong • Department of Computer Science and Engineering</p>
+            <p style="margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.7;">
+                Deployed on PAAS Platform • Flask Application
+            </p>
         </div>
     </div>
 </body>
 </html>
+"""
+
+@app.route('/')
+def index():
+    """Main route that serves the cover page"""
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for monitoring"""
+    return {
+        "status": "healthy",
+        "message": "Cloud Computing Assignment Cover Page",
+        "student": "Shanewaz Aurnob",
+        "course": "CSE-814"
+    }
+
+@app.route('/problems')
+def problems_list():
+    """API endpoint that returns all problem links"""
+    problems = {
+        "assignment": "Cloud Computing (Programs on PAAS)",
+        "course_code": "CSE-814",
+        "student": {
+            "name": "Shanewaz Aurnob",
+            "id": "20701066"
+        },
+        "problems": [
+            {
+                "number": 1,
+                "title": "Even Number Generator",
+                "url": "https://evennumbergenerator-f14k.onrender.com/",
+                "status": "deployed"
+            },
+            {
+                "number": 2,
+                "title": "Basic Application",
+                "url": "https://cloudcomputingpass-assaignment.onrender.com/",
+                "status": "deployed"
+            },
+            {
+                "number": 3,
+                "title": "User Authentication",
+                "url": "https://userauthentication-dygk.onrender.com/login",
+                "status": "deployed"
+            },
+            {
+                "number": 4,
+                "title": "Advanced Application",
+                "url": "https://cloudcomputingpass-assaignment-4.onrender.com/",
+                "status": "deployed"
+            },
+            {
+                "number": 5,
+                "title": "Login System",
+                "url": "https://cloudcomputingpass-assaignment-2.onrender.com/login",
+                "status": "deployed"
+            }
+        ]
+    }
+    return problems
+
+if __name__ == '__main__':
+    # Get port from environment variable (for deployment) or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+    
+    # Run the application
+    app.run(
+        host='0.0.0.0',  # Make it accessible from any IP
+        port=port,
+        debug=True  # Set to False for production
+    )
