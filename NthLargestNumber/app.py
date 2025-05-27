@@ -215,12 +215,12 @@ HTML_TEMPLATE = """
         
         <div id="result" class="result"></div>
         
-        <div class="tech-stack">
-            <span>Flask</span>
-            <span>NumPy</span>
-            <span>JavaScript</span>
-            <span>CSS3</span>
-        </div>
+        # <div class="tech-stack">
+        #     <span>Flask</span>
+        #     <span>NumPy</span>
+        #     <span>JavaScript</span>
+        #     <span>CSS3</span>
+        # </div>
     </div>
 
     <script>
