@@ -345,41 +345,45 @@ HTML_TEMPLATE = """
             <h2>Course Code: CSE-814</h2>
         </div>
         
-        <div class="content">
-            <div class="instructor-student-grid">
-                <div class="card">
-                    <div class="card-label">Submitted To:</div>
-                    <div class="profile-section">
-                        <div class="profile-image">
-                            <!-- Replace with actual image URL -->
-                            <img src="Images/FB_IMG_1748358006261.jpg" alt="Dr. Atiqur Rahman" onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
-                        </div>
-                        <div class="profile-info">
-                            <h3>Dr. Atiqur Rahman</h3>
-                            <p>Associate Professor</p>
-                            <p>Department of Computer Science and Engineering</p>
-                            <p>University of Chittagong</p>
-                        </div>
-                    </div>
+       <div class="content">
+    <div class="instructor-student-grid">
+        <!-- Instructor Card -->
+        <div class="card">
+            <div class="card-label">Submitted To:</div>
+            <div class="profile-section">
+                <div class="profile-image">
+                    <img src="Images/FB_IMG_1748358006261.jpg" alt="Dr. Atiqur Rahman"
+                         onerror="this.style.display='none'; this.parentElement.innerHTML='DR';">
                 </div>
-                
-                <div class="card">
-                    <div class="card-label">Submitted From:</div>
-                    <div class="profile-section">
-                        <div class="profile-image">
-                            <!-- Replace with actual image URL -->
-                            <img src="https://via.placeholder.com/80x80/667eea/ffffff?text=SA" alt="Shanewaz Aurnob" onerror="this.style.display='none'; this.parentElement.innerHTML='SA';">
-                        </div>
-                        <div class="profile-info">
-                            <h3>Shanewaz Aurnob</h3>
-                            <p>Student ID: 20701066</p>
-                            <p>Department of Computer Science and Engineering</p>
-                            <p>University of Chittagong</p>
-                        </div>
-                    </div>
+                <div class="profile-info">
+                    <h3>Dr. Atiqur Rahman</h3>
+                    <p>Associate Professor</p>
+                    <p>Department of Computer Science and Engineering</p>
+                    <p>University of Chittagong</p>
                 </div>
             </div>
-            
+        </div>
+
+        <!-- Student Card -->
+        <div class="card">
+            <div class="card-label">Submitted From:</div>
+            <div class="profile-section">
+                <div class="profile-image">
+                    <img src="Images/IMG_0001.JPG" alt="Shanewaz Aurnob"
+                         onerror="this.style.display='none'; this.parentElement.innerHTML='SA';">
+                    <!-- Replace 'your_student_image.jpg' with actual image filename if you have it -->
+                </div>
+                <div class="profile-info">
+                    <h3>Shanewaz Aurnob</h3>
+                    <p>Student ID: 20701066</p>
+                    <p>Department of Computer Science and Engineering</p>
+                    <p>University of Chittagong</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
             <div class="problems-section">
                 <h2 class="problems-title">Assignment Problems</h2>
                 <div class="problems-grid">
